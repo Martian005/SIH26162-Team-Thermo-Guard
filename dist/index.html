@@ -275,7 +275,7 @@ async function boot(){
   try{
     const s = await loadStats();
     renderStats(s);
-    renderClasses(s.registry_by_class||{});
+    renderClasses(s.registry_by_class||{}, s.detections_by_class||{});
     if(s.date_min){
       const e=document.getElementById("end"), b=document.getElementById("start");
       e.value=s.date_max; e.max=s.date_max; e.min=s.date_min;
@@ -305,14 +305,30 @@ function renderStats(s){
     <div class="stat"><span>Record</span><b>${s.date_min??"?"} &rarr; ${s.date_max??"?"}</b></div>`;
 }
 
-function renderClasses(counts){
+function renderClasses(counts, detCounts){
   document.getElementById("classes").innerHTML = CLASSES.map(c=>`
-    <div class="row">
+    <div class="row" title="${(detCounts?.[c]||0).toLocaleString()} detections classified ${label(c)}">
       <input type="checkbox" checked data-cls="${c}">
       <span class="dot" style="background:${COLOR[c]};color:${COLOR[c]}"></span>
       <span class="name">${label(c)}</span>
       <span class="count">${(counts[c]||0).toLocaleString()}</span>
     </div>`).join("");
+
+  // A zero here is a real result, not missing data: transient classes cannot
+  // by definition appear in a registry of permanently-burning installations.
+  // Without this note the legend reads as a bug.
+  const zero = CLASSES.filter(c => !counts[c] && detCounts?.[c]);
+  if(zero.length){
+    const txt = zero.map(c =>
+      `${label(c)} (${detCounts[c].toLocaleString()})`).join(", ");
+    document.getElementById("classes").insertAdjacentHTML("beforeend",
+      `<div class="hint" style="margin-top:8px">
+         0 persistent sources for ${txt} &mdash; these are one-off
+         <b>events</b>, not fixed installations. They appear in the
+         Detections layer below.
+       </div>`);
+  }
+
   document.querySelectorAll("#classes input").forEach(cb=>
     cb.addEventListener("change",applyFilter));
 }
