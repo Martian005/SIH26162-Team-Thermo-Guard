@@ -96,8 +96,15 @@ def main() -> None:
     pred = pd.read_parquet(PROCESSED / "predictions.parquet")
     n_cls = pred["pred_class"].nunique()
     per = max(1, args.max_detections // n_cls)
-    sample = (pred.groupby("pred_class", group_keys=False)
-                  .apply(lambda g: g.sample(min(len(g), per), random_state=0)))
+    # Explicit loop rather than groupby.apply: as of pandas 2.2 the grouping
+    # column is excluded from the frame handed to apply, which silently dropped
+    # pred_class from every exported feature and broke the class filter.
+    sample = pd.concat(
+        [g.sample(min(len(g), per), random_state=0)
+         for _, g in pred.groupby("pred_class", sort=False)],
+        ignore_index=True,
+    )
+    assert "pred_class" in sample.columns, "pred_class lost during sampling"
     sample["acq_date"] = sample["acq_date"].astype(str)
     write(data / "detections.geojson", to_geojson(
         sample, "latitude", "longitude",
