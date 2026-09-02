@@ -1,0 +1,36 @@
+# secrets
+.env
+
+# local tooling
+.claude/
+.code-review-graph/
+
+# data
+data/raw/
+data/interim/
+data/processed/
+*.csv
+*.parquet
+*.tif
+*.pbf
+
+# models
+models/*.txt
+models/*.pkl
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# node
+node_modules/
+
+# dist/ is intentionally committed: it is the 8.4 MB static export that hosts
+# the map with no backend, and Vercel/Netlify deploy straight from it.
+
+# os
+Thumbs.db
+.DS_Store

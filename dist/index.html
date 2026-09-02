@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thermal Anomaly Classification &mdash; India</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#30363d;
+    --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
+    --gas_flare:#ff9f0a; --industrial_fire:#ff2d55; --thermal_power:#ffd60a;
+    --mining:#bf5af2; --agricultural_burn:#64d2ff; --wildfire:#30d158;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:13px/1.5 ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+       background:var(--bg);color:var(--fg);overflow:hidden}
+  #map{position:absolute;inset:0}
+  .panel{position:absolute;background:rgba(22,27,34,.94);border:1px solid var(--line);
+         border-radius:10px;backdrop-filter:blur(12px);z-index:2}
+  #side{top:14px;left:14px;width:288px;max-height:calc(100vh - 28px);
+        overflow-y:auto;padding:14px}
+  #detail{top:14px;right:14px;width:330px;max-height:calc(100vh - 28px);
+          overflow-y:auto;padding:14px;display:none}
+  h1{font-size:15px;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:11px;margin-top:2px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+     color:var(--muted);margin:16px 0 8px;font-weight:600}
+  .row{display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;
+       user-select:none;border-radius:5px}
+  .row:hover{background:#1f2630}
+  .row input{cursor:pointer;accent-color:var(--accent)}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none;
+       box-shadow:0 0 7px currentColor}
+  .name{flex:1;text-transform:capitalize}
+  .count{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px}
+  .stat{display:flex;justify-content:space-between;padding:3px 0;
+        border-bottom:1px solid #21262d}
+  .stat b{font-variant-numeric:tabular-nums;font-weight:600}
+  label.f{display:block;color:var(--muted);font-size:11px;margin:8px 0 3px}
+  input[type=date],select{width:100%;background:#0d1117;border:1px solid var(--line);
+       color:var(--fg);border-radius:6px;padding:5px 7px;font:inherit;font-size:12px}
+  button{width:100%;margin-top:10px;background:var(--accent);color:#05121f;border:0;
+       border-radius:6px;padding:7px;font:inherit;font-weight:650;cursor:pointer}
+  button:hover{filter:brightness(1.1)}
+  button.ghost{background:#21262d;color:var(--fg)}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+       font-weight:650;text-transform:capitalize}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:4px 0;
+      border-bottom:1px solid #21262d;font-size:12px}
+  .kv span:first-child{color:var(--muted)}
+  .kv span:last-child{font-variant-numeric:tabular-nums;text-align:right}
+  .reason{background:#0d1117;border:1px solid var(--line);border-radius:6px;
+     padding:8px;font-family:ui-monospace,Consolas,monospace;font-size:10.5px;
+     line-height:1.6;color:#adbac7;word-break:break-word;margin-top:6px}
+  .alert{border-left:3px solid var(--industrial_fire);background:#1c1216;
+     padding:7px 9px;border-radius:0 6px 6px 0;margin-bottom:6px;cursor:pointer}
+  .alert:hover{background:#241519}
+  .alert b{color:var(--industrial_fire)}
+  .close{float:right;background:none;width:auto;margin:0;color:var(--muted);
+     font-size:17px;padding:0 3px;line-height:1}
+  #load{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+     background:rgba(22,27,34,.95);border:1px solid var(--line);border-radius:999px;
+     padding:6px 16px;font-size:12px;z-index:3;display:none}
+  .hint{color:var(--muted);font-size:11px;margin-top:6px;line-height:1.5}
+  .maplibregl-popup-content{background:#161b22;color:var(--fg);border:1px solid var(--line);
+     border-radius:8px;font:inherit;font-size:12px;padding:9px 11px}
+  .maplibregl-popup-tip{border-top-color:#161b22!important;
+     border-bottom-color:#161b22!important}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="load" class="panel">loading&hellip;</div>
+
+<div id="side" class="panel">
+  <h1>Industrial Thermal Anomaly Monitor</h1>
+  <div class="sub">NASA FIRMS &times; OSM &times; ESA WorldCover &mdash; India</div>
+
+  <h2>Overview</h2>
+  <div id="stats"></div>
+
+  <label class="f">Basemap</label>
+  <select id="basemap">
+    <option value="esri_dark" selected>Esri Dark Gray</option>
+    <option value="osm">OpenStreetMap</option>
+    <option value="none">None (dark)</option>
+  </select>
+
+  <h2>Persistent sources</h2>
+  <div class="hint" style="margin:0 0 6px">
+    Fixed installations that burn year-round. Click any point for its evidence.
+  </div>
+  <div id="classes"></div>
+
+  <h2>Detections</h2>
+  <label class="f">From</label><input type="date" id="start">
+  <label class="f">To</label><input type="date" id="end">
+  <label class="f">Class</label>
+  <select id="clsFilter"><option value="">all classes</option></select>
+  <button id="loadDet">Load detections in view</button>
+  <button id="clearDet" class="ghost">Clear detections</button>
+  <div class="hint" id="detInfo"></div>
+
+  <h2>Alerts</h2>
+  <div class="hint" style="margin:0 0 8px">
+    Heat above a site&rsquo;s own baseline, or new heat inside an industrial footprint.
+  </div>
+  <div id="alertList"></div>
+</div>
+
+<div id="detail" class="panel">
+  <button class="close" onclick="document.getElementById('detail').style.display='none'">&times;</button>
+  <div id="detailBody"></div>
+</div>
+
+<script>
+const CLASSES = ["gas_flare","industrial_fire","thermal_power","mining",
+                "agricultural_burn","wildfire"];
+const COLOR = {gas_flare:"#ff9f0a",industrial_fire:"#ff2d55",thermal_power:"#ffd60a",
+               mining:"#bf5af2",agricultural_burn:"#64d2ff",wildfire:"#30d158"};
+const label = s => s.replace(/_/g," ");
+const show = on => document.getElementById("load").style.display = on ? "block" : "none";
+
+// Every basemap here is keyless. CARTO's dark_all was the obvious choice until
+// it started stamping "API KEY REQUIRED" across the tiles, so anything needing
+// registration is disqualified -- a demo must not depend on a key that can be
+// rate-limited or revoked on the day.
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/";
+const BASEMAPS = {
+  esri_dark: {
+    label: "Esri Dark Gray",
+    attribution: "&copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
+    // ArcGIS tile paths are {z}/{y}/{x}, not the usual {z}/{x}/{y}.
+    tiles: [
+      {url: ESRI + "World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", opacity: 1},
+      {url: ESRI + "World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", opacity: .9},
+    ],
+  },
+  osm: {
+    label: "OpenStreetMap",
+    attribution: "&copy; OpenStreetMap contributors",
+    tiles: [{url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", opacity: .55}],
+  },
+  none: {label: "None (dark)", attribution: "", tiles: []},
+};
+
+function buildStyle(key){
+  const b = BASEMAPS[key] || BASEMAPS.none;
+  const sources = {}, layers = [
+    {id:"bg", type:"background", paint:{"background-color":"#0d1117"}}];
+  b.tiles.forEach((t,i) => {
+    const id = `base${i}`;
+    sources[id] = {type:"raster", tiles:[t.url], tileSize:256,
+                   attribution: i === 0 ? b.attribution : ""};
+    layers.push({id, type:"raster", source:id,
+                 paint:{"raster-opacity": t.opacity}});
+  });
+  return {version:8, sources, layers};
+}
+
+const map = new maplibregl.Map({
+  container:"map",
+  style: buildStyle("esri_dark"),
+  center:[80,22], zoom:4.1
+});
+map.addControl(new maplibregl.NavigationControl(),"bottom-right");
+
+const colorExpr = ["match",["get","pred_class"],
+  ...CLASSES.flatMap(c=>[c,COLOR[c]]), "#8b949e"];
+
+// Layer setup must not be gated on the basemap finishing. If the raster tiles
+// are slow or blocked (offline demo, restricted network), maplibre's "load"
+// event never fires -- and with the old code that silently took the entire data
+// layer down with it. Data is fetched independently and applied whenever the
+// style becomes usable, whichever signal arrives first.
+let mapReady = false;
+const cache = {detections:null, registry:null, alerts:null};
+
+function setData(id, gj){
+  cache[id] = gj;
+  if(mapReady && map.getSource(id)) map.getSource(id).setData(gj);
+}
+
+function initLayers(){
+  // Guard on the style actually being ready: addSource/addLayer throw
+  // "Style is not done loading" otherwise, and marking ready before the calls
+  // succeed would strand the map with no layers forever.
+  if(mapReady || !map.isStyleLoaded()) return;
+
+  for (const id of ["detections","registry","alerts"])
+    map.addSource(id,{type:"geojson",data:{type:"FeatureCollection",features:[]}});
+
+  map.addLayer({id:"detections",type:"circle",source:"detections",paint:{
+    "circle-radius":["interpolate",["linear"],["zoom"],4,1.6,8,3.4,12,6],
+    "circle-color":colorExpr,"circle-opacity":.62}});
+
+  map.addLayer({id:"registry-glow",type:"circle",source:"registry",paint:{
+    "circle-radius":["interpolate",["linear"],["zoom"],4,7,10,20],
+    "circle-color":colorExpr,"circle-opacity":.13,"circle-blur":.9}});
+
+  map.addLayer({id:"registry",type:"circle",source:"registry",paint:{
+    "circle-radius":["interpolate",["linear"],["zoom"],4,3.4,10,8],
+    "circle-color":colorExpr,"circle-stroke-width":1,
+    "circle-stroke-color":"#0d1117","circle-opacity":.95}});
+
+  map.addLayer({id:"alerts",type:"circle",source:"alerts",paint:{
+    "circle-radius":["interpolate",["linear"],["zoom"],4,6,10,15],
+    "circle-color":"#ff2d55","circle-opacity":.22,
+    "circle-stroke-width":2,"circle-stroke-color":"#ff2d55"}});
+
+  mapReady = true;
+  for(const [id,gj] of Object.entries(cache)) if(gj) map.getSource(id).setData(gj);
+  applyFilter();
+}
+
+map.on("load", initLayers);
+map.on("styledata", initLayers);
+map.on("error", e => console.warn("maplibre:", e?.error?.message || e));
+
+// Safety net: if neither event lands (slow tiles, odd embedding), keep trying
+// briefly rather than leaving the map permanently empty.
+function armStylePoll(){
+  const poll = setInterval(() => { initLayers(); if(mapReady) clearInterval(poll); }, 400);
+  setTimeout(() => clearInterval(poll), 30000);
+}
+armStylePoll();
+
+// Switching basemap discards the style, taking our data layers with it.
+// initLayers re-adds them and replays the cache once the new style settles.
+document.getElementById("basemap").onchange = e => {
+  mapReady = false;
+  map.setStyle(buildStyle(e.target.value));
+  armStylePoll();
+};
+
+boot();
+
+// The same page serves two deployments: the FastAPI backend locally, and a
+// pure-static export on a host with no Python at all. Probe once for the API
+// and fall back to the precomputed files.
+let STATIC = false;
+let staticDetections = null;
+
+async function loadStats(){
+  try{
+    const r = await fetch("/api/stats");
+    if(r.ok) return await r.json();
+  }catch(e){ /* no backend -- fall through to static */ }
+  STATIC = true;
+  return await (await fetch("./data/stats.json")).json();
+}
+
+async function boot(){
+  show(true);
+  try{
+    const s = await loadStats();
+    renderStats(s);
+    renderClasses(s.registry_by_class||{});
+    if(s.date_min){
+      const e=document.getElementById("end"), b=document.getElementById("start");
+      e.value=s.date_max; e.max=s.date_max; e.min=s.date_min;
+      const d=new Date(s.date_max); d.setDate(d.getDate()-14);
+      b.value=d.toISOString().slice(0,10); b.max=s.date_max; b.min=s.date_min;
+    }
+    CLASSES.forEach(c=>{
+      const o=document.createElement("option"); o.value=c; o.textContent=label(c);
+      document.getElementById("clsFilter").appendChild(o);
+    });
+    if(s.registry_total) setData("registry", await (await fetch(
+      STATIC ? "./data/registry.geojson" : "/api/registry")).json());
+    if(s.alerts_total) await loadAlerts();
+  }catch(e){
+    document.getElementById("stats").innerHTML =
+      `<div class="hint">Pipeline output not found. Run the pipeline, then reload.</div>`;
+  }
+  show(false);
+}
+
+function renderStats(s){
+  const f = n => (n??0).toLocaleString();
+  document.getElementById("stats").innerHTML = `
+    <div class="stat"><span>Detections</span><b>${f(s.detections_total)}</b></div>
+    <div class="stat"><span>Persistent sources</span><b>${f(s.registry_total)}</b></div>
+    <div class="stat"><span>Active alerts</span><b>${f(s.alerts_total)}</b></div>
+    <div class="stat"><span>Record</span><b>${s.date_min??"?"} &rarr; ${s.date_max??"?"}</b></div>`;
+}
+
+function renderClasses(counts){
+  document.getElementById("classes").innerHTML = CLASSES.map(c=>`
+    <div class="row">
+      <input type="checkbox" checked data-cls="${c}">
+      <span class="dot" style="background:${COLOR[c]};color:${COLOR[c]}"></span>
+      <span class="name">${label(c)}</span>
+      <span class="count">${(counts[c]||0).toLocaleString()}</span>
+    </div>`).join("");
+  document.querySelectorAll("#classes input").forEach(cb=>
+    cb.addEventListener("change",applyFilter));
+}
+
+function applyFilter(){
+  if(!mapReady) return;
+  const on = [...document.querySelectorAll("#classes input:checked")]
+             .map(i=>i.dataset.cls);
+  const f = on.length ? ["in",["get","pred_class"],["literal",on]] : ["==",1,0];
+  ["registry","registry-glow","detections"].forEach(l=>map.setFilter(l,f));
+}
+
+document.getElementById("loadDet").onclick = async () => {
+  show(true);
+  const b = map.getBounds();
+  const q = new URLSearchParams({
+    west:b.getWest(), south:b.getSouth(), east:b.getEast(), north:b.getNorth(),
+    start:document.getElementById("start").value,
+    end:document.getElementById("end").value,
+  });
+  const cls = document.getElementById("clsFilter").value;
+  if(cls) q.set("cls",cls);
+
+  let gj;
+  if(STATIC){
+    // No backend to query, so fetch the sampled set once and filter in-browser.
+    if(!staticDetections)
+      staticDetections = await (await fetch("./data/detections.geojson")).json();
+    const s = document.getElementById("start").value;
+    const e = document.getElementById("end").value;
+    gj = {type:"FeatureCollection", features: staticDetections.features.filter(f=>{
+      const [lon,lat] = f.geometry.coordinates, p = f.properties;
+      if(lon < b.getWest() || lon > b.getEast()) return false;
+      if(lat < b.getSouth() || lat > b.getNorth()) return false;
+      if(s && p.acq_date < s) return false;
+      if(e && p.acq_date > e) return false;
+      if(cls && p.pred_class !== cls) return false;
+      return true;
+    })};
+  } else {
+    gj = await (await fetch("/api/detections?"+q)).json();
+  }
+
+  setData("detections", gj);
+  document.getElementById("detInfo").textContent =
+    `${gj.features.length.toLocaleString()} shown` +
+    (STATIC ? " (sampled export)"
+            : gj.truncated ? ` of ${gj.matched.toLocaleString()} matched (sampled)` : "");
+  applyFilter();
+  show(false);
+};
+
+document.getElementById("clearDet").onclick = () => {
+  setData("detections",{type:"FeatureCollection",features:[]});
+  document.getElementById("detInfo").textContent = "";
+};
+
+async function loadAlerts(){
+  const gj = await (await fetch(
+    STATIC ? "./data/alerts.geojson" : "/api/alerts?limit=300")).json();
+  setData("alerts", gj);
+  document.getElementById("alertList").innerHTML =
+    gj.features.slice(0,12).map((f,i)=>{
+      const p=f.properties, c=f.geometry.coordinates;
+      return `<div class="alert" data-lon="${c[0]}" data-lat="${c[1]}">
+        <b>${(p.frp??0).toFixed(1)} MW</b> &middot; ${p.acq_date}<br>
+        <span style="color:var(--muted);font-size:11px">
+          ${label(p.alert_type||"")} &middot; sev ${(p.severity??0).toFixed(2)}</span>
+      </div>`;
+    }).join("") || `<div class="hint">No alerts in the current window.</div>`;
+  document.querySelectorAll(".alert").forEach(el=>el.onclick=()=>
+    map.flyTo({center:[+el.dataset.lon,+el.dataset.lat],zoom:12}));
+}
+
+for(const layer of ["registry","detections","alerts"]){
+  map.on("mouseenter",layer,()=>map.getCanvas().style.cursor="pointer");
+  map.on("mouseleave",layer,()=>map.getCanvas().style.cursor="");
+  map.on("click",layer,e=>openDetail(e.features[0],layer));
+}
+
+function openDetail(f,layer){
+  const p=f.properties, cls=p.pred_class||"unknown";
+  const col=COLOR[cls]||"#8b949e";
+  const num=(v,d=2)=>v==null?"&mdash;":(+v).toFixed(d);
+  let html = `<span class="badge" style="background:${col};color:#05121f">
+      ${label(cls)}</span>`;
+  if(p.class_agreement!=null)
+    html += ` <span class="count">${(100*p.class_agreement).toFixed(0)}% of its
+      detections agree</span>`;
+  html += `<h2>Location</h2>
+    <div class="kv"><span>Coordinates</span><span>
+      ${f.geometry.coordinates[1].toFixed(4)}, ${f.geometry.coordinates[0].toFixed(4)}
+    </span></div>`;
+  if(p.n_detections!=null)
+    html += `<div class="kv"><span>Detections</span><span>${(+p.n_detections).toLocaleString()}</span></div>`;
+  if(p.first_seen) html += `<div class="kv"><span>First seen</span><span>${p.first_seen}</span></div>`;
+  if(p.last_seen) html += `<div class="kv"><span>Last seen</span><span>${p.last_seen}</span></div>`;
+  if(p.night_frac!=null)
+    html += `<div class="kv"><span>Night fraction</span><span>${num(p.night_frac)}</span></div>`;
+  if(p.frp_mean!=null)
+    html += `<div class="kv"><span>FRP mean / max</span><span>
+      ${num(p.frp_mean,1)} / ${num(p.frp_max,1)} MW</span></div>`;
+  if(p.frp!=null)
+    html += `<div class="kv"><span>FRP</span><span>${num(p.frp,1)} MW</span></div>`;
+  if(p.acq_date) html += `<div class="kv"><span>Date</span><span>${p.acq_date}</span></div>`;
+  if(p.severity!=null)
+    html += `<div class="kv"><span>Severity</span><span>${num(p.severity)}</span></div>`;
+  if(p.top_reasons)
+    html += `<h2>Why this class</h2>
+      <div class="reason">${p.top_reasons.replaceAll("; ","<br>")}</div>
+      <div class="hint">SHAP contributions toward the predicted class.</div>`;
+  document.getElementById("detailBody").innerHTML = html;
+  document.getElementById("detail").style.display = "block";
+}
+</script>
+</body>
+</html>
