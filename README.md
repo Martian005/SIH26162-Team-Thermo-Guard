@@ -232,6 +232,23 @@ The OSM extract (~1.7 GB) downloads from
   GeoJSON to a MapLibre overlay. PostGIS is the intended upgrade for the full
   build; see below.
 
+### A note on boundaries
+
+The study area is the **coordinate bounding box 68&ndash;98&deg;E, 6&ndash;38&deg;N**,
+not a political boundary. Two consequences follow, and both are deliberate:
+
+1. Detections appear in neighbouring countries, because a rectangle around India
+   necessarily contains parts of them. Nothing is filtered by nationality.
+2. Boundaries visible on the map are drawn by the third-party basemap provider
+   (Esri or OpenStreetMap) and are **not authoritative**. This system asserts no
+   territorial claim. The UI offers a "None" basemap that renders detections with
+   no boundaries at all.
+
+A production deployment for an Indian agency should render over an official
+Survey of India or Bhuvan (NRSC) basemap and clip results to the official
+national boundary. Bhuvan's public WMS was evaluated for this prototype and was
+not reliable enough to depend on.
+
 ### Known prototype limits
 
 - Storage is GeoParquet, not PostGIS. The spatial operations are identical, but
