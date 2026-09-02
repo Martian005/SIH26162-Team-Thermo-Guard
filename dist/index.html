@@ -104,7 +104,12 @@
   <div class="hint" id="detInfo"></div>
 
   <h2>Alerts</h2>
-  <div class="hint" style="margin:0 0 8px">
+  <div class="row">
+    <input type="checkbox" id="alertsOn">
+    <span class="dot" style="background:#ff2d55;color:#ff2d55"></span>
+    <span class="name">Show alerts on map</span>
+  </div>
+  <div class="hint" style="margin:6px 0 8px">
     Heat above a site&rsquo;s own baseline, or new heat inside an industrial footprint.
   </div>
   <div id="alertList"></div>
@@ -116,10 +121,14 @@
 </div>
 
 <script>
-const CLASSES = ["gas_flare","industrial_fire","thermal_power","mining",
-                "agricultural_burn","wildfire"];
-const COLOR = {gas_flare:"#ff9f0a",industrial_fire:"#ff2d55",thermal_power:"#ffd60a",
-               mining:"#bf5af2",agricultural_burn:"#64d2ff",wildfire:"#30d158"};
+// Must stay in sync with the label cascade in src/model/dataset.py. When
+// industrial_plant was added there, omitting it here silently dropped the
+// largest registry class (680 of 2,047 sources) into the unstyled fallback.
+const CLASSES = ["gas_flare","industrial_fire","industrial_plant","thermal_power",
+                 "mining","agricultural_burn","wildfire"];
+const COLOR = {gas_flare:"#ff9f0a",industrial_fire:"#ff2d55",industrial_plant:"#d0d7de",
+               thermal_power:"#ffd60a",mining:"#bf5af2",agricultural_burn:"#64d2ff",
+               wildfire:"#30d158"};
 const label = s => s.replace(/_/g," ");
 const show = on => document.getElementById("load").style.display = on ? "block" : "none";
 
@@ -168,7 +177,7 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl(),"bottom-right");
 
 const colorExpr = ["match",["get","pred_class"],
-  ...CLASSES.flatMap(c=>[c,COLOR[c]]), "#8b949e"];
+  ...CLASSES.flatMap(c=>[c,COLOR[c]]), "#484f58"];  // fallback = clearly "unclassified"
 
 // Layer setup must not be gated on the basemap finishing. If the raster tiles
 // are slow or blocked (offline demo, restricted network), maplibre's "load"
@@ -205,10 +214,14 @@ function initLayers(){
     "circle-color":colorExpr,"circle-stroke-width":1,
     "circle-stroke-color":"#0d1117","circle-opacity":.95}});
 
-  map.addLayer({id:"alerts",type:"circle",source:"alerts",paint:{
-    "circle-radius":["interpolate",["linear"],["zoom"],4,6,10,15],
-    "circle-color":"#ff2d55","circle-opacity":.22,
-    "circle-stroke-width":2,"circle-stroke-color":"#ff2d55"}});
+  // Hidden by default: 2,000 alert rings at national zoom completely obscure
+  // the registry underneath. The operator turns them on deliberately.
+  map.addLayer({id:"alerts",type:"circle",source:"alerts",
+    layout:{visibility: document.getElementById("alertsOn").checked ? "visible" : "none"},
+    paint:{
+      "circle-radius":["interpolate",["linear"],["zoom"],4,6,10,15],
+      "circle-color":"#ff2d55","circle-opacity":.22,
+      "circle-stroke-width":2,"circle-stroke-color":"#ff2d55"}});
 
   mapReady = true;
   for(const [id,gj] of Object.entries(cache)) if(gj) map.getSource(id).setData(gj);
@@ -229,6 +242,11 @@ armStylePoll();
 
 // Switching basemap discards the style, taking our data layers with it.
 // initLayers re-adds them and replays the cache once the new style settles.
+document.getElementById("alertsOn").onchange = e => {
+  if(mapReady && map.getLayer("alerts"))
+    map.setLayoutProperty("alerts","visibility", e.target.checked ? "visible" : "none");
+};
+
 document.getElementById("basemap").onchange = e => {
   mapReady = false;
   map.setStyle(buildStyle(e.target.value));
